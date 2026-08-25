@@ -159,10 +159,14 @@ item carries:
 
 `sample_data` is the shortcut. Wire Inspect into a Fill node, turn on **Send Raw JSON
 Instead**, and pass `{{ $json.sample_data }}`: you get a real document out of an unfamiliar
-template in one step, then replace the dummy values one at a time. Across DocMint's own
-fixtures the skeleton renders 20 out of 21 templates without an error — the exception is a
-template that multiplies two fields nothing else types as numbers, where the skeleton
-supplies text and the `sumProduct` formatter rejects it.
+template in one step, then replace the dummy values one at a time.
+
+That the skeleton actually renders is a test, not a hope: DocMint's suite fills every one
+of its 21 fixture and example templates with the `sample_data` its own API returned for
+them, and all 21 succeed. It was 20 until the case that failed was fixed — a template
+multiplying two fields that nothing else typed as numbers, where the skeleton offered text
+and `sumProduct` rightly refused it. Formatter arguments are now read as type facts, so
+`{items|sumProduct:qty:unit_price}` makes `qty` a number even though no other tag says so.
 
 ### Template
 
@@ -357,8 +361,17 @@ Stated plainly, because a README that only lists strengths is not much use:
   supported. Docupilot has all three.
 - **LibreOffice only** for the PDF step. No PDF/A, no watermarking, no PDF encryption, no
   choice of converter. Carbone offers all of those.
-- **A smaller formatter library than Carbone's**, which also has aggregates, an i18n
-  system and live currency conversion.
+- **A smaller formatter library than Carbone's**, which also has aggregates
+  (`aggSum`, `cumSum`), an i18n system, live currency conversion and block operators
+  (`drop`/`keep`). DocMint has 43 formatters including value and date comparisons; Carbone
+  has more.
+- **One error per render.** If two placeholders are wrong, DocMint names the first,
+  you fix it, and the next render names the second. docxtemplater reports them all at once.
+- **No batch or asynchronous rendering yet, and PDF conversion runs one at a time.**
+  LibreOffice was measured at 219 MB peak and about 2.6 seconds per conversion on the
+  production instance, so PDF requests queue. If you need hundreds of PDFs at once, that is
+  a real limitation today; ask for the Office file instead, which is not throttled and
+  takes about 25 ms end to end.
 - **No delivery integrations.** DocMint returns the file and lets n8n do the emailing,
   uploading and storing — which is the right split for a workflow tool, but it is a
   difference rather than a strict advantage.
