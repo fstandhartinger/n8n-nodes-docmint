@@ -1,0 +1,34 @@
+{
+	"node": "n8n-nodes-docmint.docMint",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Utility", "Productivity"],
+	"alias": [
+		"Word",
+		"DOCX",
+		"Excel",
+		"XLSX",
+		"PowerPoint",
+		"PPTX",
+		"Office",
+		"Document",
+		"Template",
+		"Mail Merge",
+		"Fill Template",
+		"Document to PDF",
+		"Invoice",
+		"Contract",
+		"Report",
+		"Certificate",
+		"Proposal",
+		"DocMint"
+	],
+	"resources": {
+		"credentialDocumentation": [
+			{ "url": "https://docmint-832s.onrender.com/docs#authentication" }
+		],
+		"primaryDocumentation": [
+			{ "url": "https://docmint-832s.onrender.com/docs" }
+		]
+	}
+}

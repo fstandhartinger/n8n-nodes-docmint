@@ -1,0 +1,66 @@
+{
+  "name": "n8n-nodes-docmint",
+  "version": "0.1.0",
+  "description": "Fill Word, Excel and PowerPoint templates with workflow data and get the file — or a PDF — back on the same node. The template's own placeholders become real n8n fields.",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "docx",
+    "xlsx",
+    "pptx",
+    "word",
+    "excel",
+    "powerpoint",
+    "document-generation",
+    "invoice",
+    "report",
+    "docmint"
+  ],
+  "license": "MIT",
+  "homepage": "https://docmint-832s.onrender.com",
+  "author": {
+    "name": "Florian Standhartinger",
+    "email": "florian.standhartinger@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fstandhartinger/n8n-nodes-docmint.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fstandhartinger/n8n-nodes-docmint/issues"
+  },
+  "engines": {
+    "node": ">=20.15"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "n8n-node build && rm -rf dist/docs dist/package.json dist/tsconfig.tsbuildinfo && find dist -name '*.js.map' -delete",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "lintfix": "n8n-node lint --fix",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.js",
+    "release": "n8n-node release",
+    "prerelease": "n8n-node prerelease"
+  },
+  "files": [
+    "dist",
+    "!dist/*.tsbuildinfo"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/DocMintApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/DocMint/DocMint.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "^0.44.5"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Lint, build, and check the package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: node --test test/*.test.js
+
+      - name: The package must have zero runtime dependencies
+        run: |
+          deps=$(node -p "JSON.stringify(require('./package.json').dependencies || {})")
+          echo "dependencies: $deps"
+          test "$deps" = "{}" || { echo "::error::verified community nodes may not have runtime dependencies"; exit 1; }
+
+      - name: The packed tarball must contain the node, the credential and the icons
+        run: |
+          npm pack
+          tar tzf n8n-nodes-docmint-*.tgz | sort | tee /tmp/files
+          for f in \
+            package/dist/nodes/DocMint/DocMint.node.js \
+            package/dist/nodes/DocMint/DocMint.node.json \
+            package/dist/nodes/DocMint/docmint.svg \
+            package/dist/nodes/DocMint/docmint.dark.svg \
+            package/dist/credentials/DocMintApi.credentials.js \
+            package/dist/credentials/docmint.svg \
+            package/README.md \
+            package/LICENSE.md ; do
+            grep -qx "$f" /tmp/files || { echo "::error::missing $f from the published package"; exit 1; }
+          done
+
+      - name: The node must load and describe itself
+        run: |
+          node -e "
+            const { DocMint } = require('./dist/nodes/DocMint/DocMint.node.js');
+            const node = new DocMint();
+            const d = node.description;
+            if (d.name !== 'docMint') throw new Error('unexpected node name: ' + d.name);
+            if (d.usableAsTool !== true) throw new Error('the node must be usable as an AI Agent tool');
+            if (!d.subtitle) throw new Error('a verified node needs a subtitle');
+            const ops = (resource) => d.properties
+              .filter((p) => p.name === 'operation' && p.displayOptions.show.resource.includes(resource))
+              .flatMap((p) => p.options.map((o) => o.value));
+            for (const op of ['fill', 'inspect']) {
+              if (!ops('document').includes(op)) throw new Error('missing document operation: ' + op);
+            }
+            for (const op of ['upload', 'get', 'getAll', 'getFields', 'download', 'delete', 'listVersions', 'rollback']) {
+              if (!ops('template').includes(op)) throw new Error('missing template operation: ' + op);
+            }
+            if (!ops('account').includes('getUsage')) throw new Error('missing account operation: getUsage');
+            // The properties reference these methods by name; a rename that missed
+            // one would only show up as an empty field list in the editor.
+            if (typeof node.methods.resourceMapping.getTemplateFields !== 'function') {
+              throw new Error('the resource mapper method is missing');
+            }
+            if (typeof node.methods.listSearch.searchTemplates !== 'function') {
+              throw new Error('the template search method is missing');
+            }
+            console.log('node ok:', d.displayName, '|', ops('document').concat(ops('template'), ops('account')).join(', '));
+          "

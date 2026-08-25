@@ -1,0 +1,372 @@
+# n8n-nodes-docmint
+
+Fill **Word, Excel and PowerPoint templates** with data from your workflow and get the
+file — or a PDF, or both — back on the same node.
+
+And the part nothing else does: **the node reads your template and turns its
+placeholders into real n8n fields.** Typed, expression-capable, one per placeholder,
+with the names taken from the document itself. No JSON textarea. No guessing the keys.
+
+[DocMint](https://docmint-832s.onrender.com) is the API behind it.
+
+---
+
+## Why this node exists
+
+Every document-generation product joins your data to your template by invisible string
+matching, and none of them will tell you the field names before you render. So the loop
+you are in today is:
+
+> guess the keys → render → open the .docx in Word → find the silently-empty cell → guess again
+
+This node breaks that loop in two places.
+
+**1. It shows you the placeholders.** DocMint has `GET /v1/templates/:name/fields`, and the
+node wires it to n8n's resource mapper. Pick a template and the panel fills with the
+placeholders that template actually contains — `invoice_no`, `customer.name`, `issued`,
+`items` — each as its own input. A `{issued|date:...}` placeholder becomes a date field.
+`{total|currency:EUR}` becomes a number field. `{#items}` becomes a list field.
+
+**2. It refuses to render a document with a hole in it.** If a placeholder has no value,
+DocMint answers 422 and names the placeholder *and where in the document it is*. The node
+puts both in the red box in n8n:
+
+> **The template uses {customer_vat} but the data has no "customer_vat".**
+> Placeholder "customer_vat", at word/document.xml, paragraph 12. Did you mean
+> "customer_vat_id"? Fields the template can see here: invoice_no, customer_vat_id,
+> total. Open the Data section: the placeholder named above is one of the fields
+> listed there.
+
+You never open Word to find out what went wrong.
+
+If you already have a data object upstream, turn on **Send Raw JSON Instead** and pass it
+through. The mapper is the default; the JSON blob is the escape hatch.
+
+## Install
+
+> **Unverified community nodes need self-hosted n8n.** n8n's rule is that *"unverified
+> community nodes aren't available on n8n cloud and require self-hosting n8n."* Until this
+> package is verified, install it on a self-hosted instance. On n8n Cloud you can call the
+> API directly from an HTTP Request node pointed at `POST /v1/render`, which returns the
+> same bytes this node hands you.
+
+**From the n8n UI**
+
+Settings → Community Nodes → Install → `n8n-nodes-docmint`
+
+**From the CLI**
+
+```bash
+cd ~/.n8n/nodes
+npm install n8n-nodes-docmint
+```
+
+Then restart n8n.
+
+The package is published from
+[this repository's GitHub Actions workflow](.github/workflows/publish.yml) with an npm
+provenance attestation, so `npm audit signatures` can verify which commit built it.
+
+## Credential
+
+1. Create an account at <https://docmint-832s.onrender.com/signup>. Your API key is shown
+   once, immediately.
+2. In n8n, add a **DocMint API** credential and paste the key. It starts with `dm_live_`.
+3. Press **Test**. The credential checks itself against `GET /v1/usage`, which is
+   authenticated, costs no credits and creates no file.
+
+**Base URL** only needs changing if you run your own DocMint instance.
+
+## Zero to a filled invoice
+
+You need one thing to start: a `.docx` with placeholders in it. Open Word, type this, save
+it as `invoice.docx`:
+
+```
+INVOICE {invoice_no}
+Date: {issued|date:DD MMMM YYYY}
+
+Bill to: {customer.name}
+{customer.address}
+
+{#items}
+{description}   {qty} x {unit_price|currency:EUR} = {line_total|currency:EUR}
+{/items}
+
+Total: {items|sumProduct:qty:unit_price|currency:EUR}
+```
+
+**Step 1 — upload it once.**
+
+Add a **DocMint** node, set **Resource** to `Template` and **Operation** to `Upload`.
+Point **Input Binary Field** at the property holding the file (`data` if a Read/Write
+Files node put it there) and set **Name** to `invoice`. Execute it once. The response
+tells you the format it detected and lists the placeholders it found.
+
+You never have to do this again — uploading the same name later adds a *version* rather
+than replacing the file, and old versions can be rolled back.
+
+**Step 2 — fill it.**
+
+Add a second **DocMint** node after whatever produces your data. Leave **Resource** on
+`Document` and **Operation** on `Fill`, then open the **Template** dropdown and choose
+`invoice`.
+
+The **Data** section now lists the placeholders the document actually contains. Fill them
+in, or drop an expression into each:
+
+| Placeholder | Value |
+|---|---|
+| `invoice_no` | `{{ $json.number }}` |
+| `issued` | `{{ $now }}` |
+| `customer.name` | `{{ $json.customer }}` |
+| `customer.address` | `{{ $json.address }}` |
+| `items (rows: qty, unit_price)` | `{{ $json.lines }}` |
+
+Set **File Name** to `invoice-{invoice_no}` and execute.
+
+The output item carries the filled `.docx` in the `data` binary field, named
+`invoice-INV-2026-0001.docx`, ready for Gmail, Drive, S3, Slack or an HTTP Request. No
+second download step.
+
+Prefer the whole item mapped automatically? Switch the Data section's mode to **Map
+Automatically** and the incoming item's JSON is sent as the data.
+
+## Operations
+
+### Document
+
+| Operation | What it does |
+|---|---|
+| **Fill** | Fill a template with data and return the document, a PDF, or both |
+| **Inspect** | List the placeholders a template contains, and where each one is written |
+
+**Inspect** is worth wiring up on its own. Point it at a template and execute: the output
+item is the field list, with the `location` of every tag (`word/document.xml, paragraph
+12`, `Sheet1!C7`, `slide 3, shape "Title"`). It is the fastest way to see what a template
+someone else built is asking for.
+
+### Template
+
+| Operation | What it does |
+|---|---|
+| **Upload** | Upload a `.docx`, `.xlsx` or `.pptx` from a binary field, or add a version to an existing template |
+| **Get** | One template: format, size, current version and its version history |
+| **Get Many** | The templates on the account |
+| **Get Fields** | The placeholders a stored template needs |
+| **Download** | The template file itself, as binary |
+| **Delete** | Delete a template and every version of it |
+| **List Versions** | Every stored version, with size, note and date |
+| **Rollback** | Restore an earlier version as the current one |
+
+### Account
+
+| Operation | What it does |
+|---|---|
+| **Get Usage** | Plan, quota, documents remaining, and this month's breakdown |
+
+The node is marked `usableAsTool`, so an **n8n AI Agent can call it directly** — give the
+agent the node and it can produce a document as part of its own reasoning.
+
+## Choosing the template
+
+The **Template** field has three modes:
+
+- **From List** — a searchable dropdown of the templates on your account, each showing its
+  format and how many placeholders it has.
+- **By Name** — plain text, so an expression can pick the template at runtime:
+  `{{ $json.docType }}`.
+- **Upload / Inline** — the name of a binary field on the item holding the template file.
+  It is sent with the request and nothing is stored on your account. Useful when the
+  template itself comes from Drive or an email attachment.
+
+In **Upload / Inline** mode the placeholders are only known once the workflow runs, so the
+Data section cannot list them in advance. It says so, and points you at **Send Raw JSON
+Instead** or at the **Inspect** operation.
+
+## Office file, PDF, or both
+
+**Output** is a per-request choice, not a property of the template.
+
+| Output | You get |
+|---|---|
+| **Office File** (default) | The filled `.docx`, `.xlsx` or `.pptx`, in the `data` binary field |
+| **PDF** | The document converted to PDF, in the `data` binary field |
+| **Both** | Two binary fields on one item: the Office file in `data` and the PDF in `pdf` |
+
+With **Both**, the item's JSON also carries `binaryFields: { document: "data", pdf: "pdf" }`,
+so the next node does not have to guess where they went. Both field names are configurable
+under **Options**.
+
+A PDF costs one credit more than the Office file, because converting it costs DocMint
+about a hundred times the CPU of the fill itself (measured: roughly 1.0 s of LibreOffice
+against about 10 ms). Nothing else is metered — downloading a file you already generated
+is free.
+
+## Template syntax
+
+Both delimiter styles work, in every format, always: `{name}` and `{{name}}`. A template
+written for docxtemplater and one written for a Handlebars-based tool both work unchanged.
+
+| Form | Meaning |
+|---|---|
+| `{name}` | a value |
+| `{user.email}`, `{items.0.sku}` | dotted path, numeric index |
+| `{{[Customer Name]}}` | a field name containing spaces |
+| `{#items} … {/items}` | section: once per array element; once for an object; once for a truthy scalar; never for an empty array |
+| `{^items} … {/items}` | inverted section: renders only when absent, empty or falsy |
+| `{/}` | closes the innermost open section |
+| `{.}` | the current item, for arrays of scalars |
+| `{../x}` | one scope outwards |
+| `{$index}` `{$index1}` `{$first}` `{$last}` `{$length}` | loop metadata |
+| `{%logo}` | an image, from a URL or base64 |
+| `{@rawXml}` | raw OOXML, unescaped |
+| `{!note}` | a comment, removed from the output |
+| `{price\|currency:EUR}` | a formatter pipeline |
+
+Anything between braces that does not parse as a tag is left alone, so a document
+containing `{ "total": 12 }` or `.a { color: red }` renders unchanged.
+
+**Formatters:**
+`add` `count` `currency` `date` `default` `divide` `filter` `groupBy` `join` `limit`
+`lower` `multiply` `number` `ordinal` `percent` `reject` `reverse` `round` `skip` `sort`
+`subtract` `sum` `sumProduct` `title` `trim` `unique` `upper` `yesno`
+
+`{items|sum:amount}` and `{items|sumProduct:qty:price}` are the ones that matter: a total
+in a document should be computed from the data, never typed in. Formatters work on
+sections too — `{#items|filter:active|sort:due_date}` — so the workflow does not have to
+pre-sort a list before it gets here.
+
+The live list for your deployment is at
+<https://docmint-832s.onrender.com/v1/capabilities>, which is generated from the running
+code rather than written by hand.
+
+## Options
+
+Everything below is optional and lives under **Options** on the Fill operation.
+
+| Option | Default | Notes |
+|---|---|---|
+| Locale | `en-US` | BCP 47 tag deciding how numbers, dates and currencies are written |
+| Currency | `USD` | Three-letter ISO code used by `currency` when the template names none |
+| Time Zone | `UTC` | IANA zone the `date` formatter renders in |
+| On Missing Placeholder | Fail and name it | Or leave empty, or keep the tag visible for debugging |
+| Strict Scope | off | Fail when a placeholder inside a loop is not a field of the row |
+| Template Version | current | Render an older version of a stored template |
+| Put Office File in Field | `data` | Binary field name |
+| Put PDF in Field | `pdf` | Binary field name, used when Output is Both |
+
+### Strict Scope, and the bug it catches
+
+Write `{#items}{name}{/items}` where `name` exists only at the top level of your data and
+most document generators will happily print the same value on every row and tell you
+nothing. DocMint allows it — `{currency}` from the invoice root *should* resolve inside a
+loop — but reports every occurrence back as a `resolved_from_outer_scope` warning naming
+the placeholder, the location, and the fields the row actually has. Turn **Strict Scope**
+on and it becomes an error instead.
+
+## Errors
+
+The API answers every failure with a machine code, a sentence, a hint, and — for a
+placeholder that would not resolve — the field name and its location in the document. The
+node puts the sentence in the error title and everything else in the description.
+
+Turn on **Settings → Continue On Fail** to route bad items down the error branch instead.
+The failed item carries the API's own fields, so an IF node can branch on
+`$json.error.code`, `$json.error.field` or `$json.error.location`:
+
+```json
+{
+  "error": {
+    "code": "placeholder_unresolved",
+    "message": "The template uses {customer_vat} but the data has no \"customer_vat\".",
+    "hint": "Did you mean \"customer_vat_id\"? …",
+    "field": "customer_vat",
+    "location": "word/document.xml, paragraph 12",
+    "available": ["invoice_no", "customer_vat_id", "total"],
+    "docs": "https://docmint-832s.onrender.com/docs#errors",
+    "request_id": "51e5390e4107f566",
+    "httpCode": "422"
+  },
+  "errorMessage": "The template uses {customer_vat} but the data has no \"customer_vat\"."
+}
+```
+
+`rate_limited` (429), `pdf_queue_full` (503) and `pdf_timeout` (504) are all worth
+retrying — turn on **Settings → Retry On Fail** and n8n handles them.
+
+A credit taken for a render that then fails is refunded, so a run that errors on a missing
+field costs you nothing.
+
+## Limits
+
+| | |
+|---|---|
+| Formats filled | `.docx`, `.xlsx`, `.pptx` |
+| Max template | 25 MB |
+| Max data | 8 MB |
+| Max request body | 36 MB |
+| Versions kept per template | 20, oldest pruned first, never below one |
+| PDF conversion timeout | 90 s |
+| Requests per minute, per account | 120, with a burst of 30 |
+
+Template names are 1–64 characters of lower-case letters, digits, dot, dash and
+underscore. Macro-enabled files (`.docm`, `.xlsm`, `.pptm`) are filled, but the macros are
+not guaranteed to survive and the file comes back with the plain content type — the render
+response says so in its warnings.
+
+## Pricing
+
+| Plan | Price | Documents / month |
+|---|---|---|
+| Free | $0 | 30 |
+| Starter | $9 | 2,000 |
+| Pro | $29 | 20,000 |
+| Scale | $99 | 100,000 |
+
+A document costs one credit; asking for a PDF costs one more. Nothing else is metered.
+
+For scale: Docupilot's published Starter plan is $29/month for 100 documents, and it bills
+per *delivery* — "if you generate an invoice and send it via email to recipients while also
+uploading it to Google Drive, it will use 2 credits", and "Downloading generated document
+also consumes 1 credit". DocMint bills once per document produced.
+
+## What DocMint does not do
+
+Stated plainly, because a README that only lists strengths is not much use:
+
+- **No richtext, QR codes or maps.** HTML or Markdown into a Word document is not
+  supported. Docupilot has all three.
+- **LibreOffice only** for the PDF step. No PDF/A, no watermarking, no PDF encryption, no
+  choice of converter. Carbone offers all of those.
+- **A smaller formatter library than Carbone's**, which also has aggregates, an i18n
+  system and live currency conversion.
+- **No delivery integrations.** DocMint returns the file and lets n8n do the emailing,
+  uploading and storing — which is the right split for a workflow tool, but it is a
+  difference rather than a strict advantage.
+- **Placeholder scoping is only partly visible for Word and Excel.** The renderer's
+  `inspect` reports section *openings* but not their closings for `.docx` and `.xlsx`, so
+  for those formats the node lists every placeholder at the top level and recovers row
+  fields only where a formatter names them (`{items|sumProduct:qty:price}`). For `.pptx`
+  the closings are reported and the nesting is exact.
+
+## Links
+
+- Docs: <https://docmint-832s.onrender.com/docs>
+- Dashboard: <https://docmint-832s.onrender.com/dashboard>
+- Capabilities of the running build: <https://docmint-832s.onrender.com/v1/capabilities>
+- Issues: <https://github.com/fstandhartinger/n8n-nodes-docmint/issues>
+
+Generating PDFs from HTML, Markdown or a URL instead? That is
+[n8n-nodes-pdfmint](https://www.npmjs.com/package/n8n-nodes-pdfmint), by the same author.
+
+## Compatibility
+
+Built and tested against `n8n-workflow` 2.35.3 on Node.js 20. The `engines` field asks for
+Node 20.15 or newer, matching n8n's own floor. The package has **zero runtime
+dependencies** — it is a thin HTTP client, which is what makes it eligible for n8n
+verification at all.
+
+## Licence
+
+[MIT](LICENSE.md)
