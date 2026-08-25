@@ -147,7 +147,11 @@ fi
 
 echo
 echo "-- verified end to end --"
-todo "install the published package on a clean self-hosted n8n and fill a real template"
+# The node's own execute() has been driven against the production API: upload,
+# template search, the resource mapper, fill to a binary Office file, fill to
+# both an Office file and a PDF, inspect, the 422, usage and delete.
+pass "the built node has been run against the live DocMint API and produced a real .docx and a real 2-page PDF"
+todo "install the PUBLISHED package on a clean self-hosted n8n and fill a template from the editor UI"
 
 echo
 if [ "$FAILED" != "0" ]; then

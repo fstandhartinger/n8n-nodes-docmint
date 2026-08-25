@@ -359,3 +359,43 @@ test('Account > Get Usage runs once for the node and pairs to every input item',
 	assert.deepEqual(items[0].pairedItem, [{ item: 0 }, { item: 1 }]);
 	assert.equal(items[0].json.credits.remaining, 19998);
 });
+
+test('a JSON body is labelled as JSON even when the response asked for is binary', async () => {
+	// `json: false` describes the RESPONSE. The request still carries a JSON
+	// body, and leaving the content type to be inferred is how a body silently
+	// arrives at the server unparsed — which reaches the user as "no template".
+	const { promise, calls } = runFill({
+		params: fillParams({ output: 'document' }),
+		http: () => ok(Buffer.from('PK'), { 'content-type': DOCX_MIME }),
+	});
+	await promise;
+	assert.equal(calls[0].encoding, 'arraybuffer', 'the response must be read as bytes');
+	assert.equal(calls[0].json, false);
+	assert.equal(calls[0].headers['Content-Type'], 'application/json');
+	assert.equal(calls[0].headers.Accept, '*/*');
+
+	// A GET with no body must not claim to be sending JSON.
+	const download = createContext({
+		params: {
+			resource: 'template',
+			operation: 'download',
+			templateName: rl('name', 'invoice'),
+			readOptions: {},
+		},
+		http: () => ok(Buffer.from('PK'), { 'content-type': DOCX_MIME }),
+	});
+	await new DocMint().execute.call(download.context);
+	assert.equal(download.calls[0].headers['Content-Type'], undefined);
+});
+
+test('Inspect hands back the sample payload the API built by rendering the template', async () => {
+	const sample = { items: [{ sku: 'sku', qty: 0 }], customer: { name: 'name' } };
+	const { context } = createContext({
+		params: { resource: 'document', operation: 'inspect', template: rl('name', 'invoice'), options: {} },
+		http: () => ok({ format: 'docx', fields: [], names: [], tags: [], sample_data: sample }),
+	});
+	const [items] = await new DocMint().execute.call(context);
+	// It is on the item unchanged, so a workflow can feed it straight into
+	// Send Raw JSON Instead as a first payload.
+	assert.deepEqual(items[0].json.sample_data, sample);
+});

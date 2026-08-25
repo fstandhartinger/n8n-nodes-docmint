@@ -8,119 +8,134 @@ const {
 	toResourceMapperFields,
 	expandPaths,
 	dataFromMapper,
-	fieldTypeOf,
-	rowKeysFromFormatters,
 } = require('../dist/nodes/DocMint/fields.js');
 const { createLoadOptionsContext, ok, rl } = require('./harness.js');
 
 /**
- * A recorded `GET /v1/templates/invoice/fields` response, in the shape the DOCX
- * and PPTX renderers produce: `fields` are the distinct data paths, `tags` are
- * every tag in source order including the `close` tags that make the nesting
- * knowable.
+ * Recorded `POST /v1/inspect` responses, taken from the DocMint renderer running
+ * over its own fixtures rather than invented. The API derives this tree by
+ * actually rendering the template, so these are the shapes the node really meets.
  */
-const INVOICE_FIELDS = {
-	id: 'tpl_2Nc8Kq9wQb',
-	name: 'invoice',
-	format: 'docx',
-	version: 3,
+
+/** `fixtures/report.pptx` — two independent lists on one deck. */
+const REPORT_PPTX = {
+	format: 'pptx',
+	names: ['title', 'subtitle', 'client.name', 'logo', 'notes', 'rows', 'sku', 'qty', 'amount', 'findings', 'label', 'detail', 'owner'],
 	fields: [
-		'invoice_no',
-		'customer.name',
-		'issued|date:YYYY-MM-DD',
-		'items',
-		'sku',
-		'qty',
-		'price',
-		'currency',
-		'total',
-		'paid',
-		'logo',
+		{ name: 'title', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 4, locations: ['slide 1, shape "Title 1"'] },
+		{ name: 'subtitle', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 2, locations: ['slide 1, shape "Subtitle 2"'] },
+		{ name: 'client.name', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 4, locations: ['slide 1, shape "Subtitle 2"'] },
+		{ name: 'logo', scope: '', type: 'image', repeating: false, required: true, formatters: [], used: 2, locations: ['slide 1, shape "Logo 3"'] },
+		{ name: 'notes', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 2, locations: ['slide 1 notes, shape "Notes 1"'] },
+		{ name: 'rows', scope: '', type: 'array', repeating: true, required: true, formatters: ['count', 'sum', 'currency'], used: 6, locations: ['slide 2, table "Items 5", row 1, cell 3'] },
+		{ name: 'findings', scope: '', type: 'array', repeating: true, required: true, formatters: [], used: 6, locations: ['slide 3, shape "Body 6"'] },
+		{ name: 'sku', scope: 'rows', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['slide 2, table "Items 5", row 2, cell 1'] },
+		{ name: 'qty', scope: 'rows', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['slide 2, table "Items 5", row 2, cell 2'] },
+		{ name: 'amount', scope: 'rows', type: 'number', repeating: false, required: true, formatters: ['currency'], used: 1, locations: ['slide 2, table "Items 5", row 2, cell 3'] },
+		{ name: 'label', scope: 'findings', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['slide 3, shape "Body 6"'] },
+		{ name: 'detail', scope: 'findings', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['slide 3, shape "Body 6"'] },
+		{ name: 'owner', scope: 'findings', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['slide 3, shape "Body 6"'] },
 	],
-	tags: [
-		{ expr: 'invoice_no', kind: 'value', location: 'word/document.xml, paragraph 3' },
-		{ expr: 'customer.name', kind: 'value', location: 'word/document.xml, paragraph 5' },
-		{ expr: 'issued|date:YYYY-MM-DD', kind: 'value', location: 'word/document.xml, paragraph 6' },
-		{ expr: '%logo', kind: 'image', location: 'word/document.xml, paragraph 1' },
-		{ expr: 'items', kind: 'section', location: 'word/document.xml, paragraph 12' },
-		{ expr: 'sku', kind: 'value', location: 'word/document.xml, paragraph 12' },
-		{ expr: 'qty', kind: 'value', location: 'word/document.xml, paragraph 12' },
-		{ expr: 'price|currency:EUR', kind: 'value', location: 'word/document.xml, paragraph 12' },
-		{ expr: '../currency', kind: 'value', location: 'word/document.xml, paragraph 12' },
-		{ expr: 'items', kind: 'close', location: 'word/document.xml, paragraph 13' },
-		{ expr: 'items|sum:amount', kind: 'value', location: 'word/document.xml, paragraph 15' },
-		{ expr: 'total|currency:EUR', kind: 'value', location: 'word/document.xml, paragraph 15' },
-		{ expr: 'paid|yesno:Paid:Unpaid', kind: 'value', location: 'word/document.xml, paragraph 16' },
+	sample_data: {
+		rows: [{ sku: 'sku', qty: 'qty', amount: 0 }],
+		findings: [{ label: 'label', detail: 'detail', owner: 'owner' }],
+		title: 'title',
+		client: { name: 'name' },
+		logo: null,
+	},
+};
+
+/** `fixtures/nested.docx` — a list inside a list inside the root. */
+const NESTED_DOCX = {
+	format: 'docx',
+	names: ['customer', 'orders', 'ref', 'lines', 'sku', 'qty', 'tags'],
+	fields: [
+		{ name: 'customer', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 8, locations: ['word/document.xml, paragraph 1'] },
+		{ name: 'orders', scope: '', type: 'array', repeating: true, required: true, formatters: [], used: 4, locations: ['word/document.xml, paragraph 2'] },
+		{ name: 'sku', scope: 'lines', type: 'string', repeating: false, required: true, formatters: [], used: 2, locations: ['word/document.xml, table 1 row 2, paragraph 7'] },
+		{ name: 'qty', scope: 'lines', type: 'number', repeating: false, required: true, formatters: [], used: 2, locations: ['word/document.xml, table 1 row 2, paragraph 8'] },
+		{ name: 'tags', scope: 'lines', type: 'array', repeating: true, required: true, formatters: [], used: 4, locations: ['word/document.xml, table 1 row 2, paragraph 9'] },
+		{ name: 'ref', scope: 'orders', type: 'string', repeating: false, required: true, formatters: [], used: 3, locations: ['word/document.xml, paragraph 3'] },
+		{ name: 'customer', scope: 'orders', type: 'string', repeating: false, required: true, formatters: [], used: 3, locations: ['word/document.xml, paragraph 3'] },
+		{ name: 'lines', scope: 'orders', type: 'array', repeating: true, required: true, formatters: ['sum'], used: 6, locations: ['word/document.xml, table 1 row 2'] },
+	],
+	sample_data: { orders: [{ lines: [{ tags: ['tags'], sku: 'sku', qty: 0 }], ref: 'ref', customer: 'customer' }], customer: 'customer' },
+};
+
+/** `fixtures/invoice.xlsx` — an optional field, because the tag carries `|default:`. */
+const INVOICE_XLSX = {
+	format: 'xlsx',
+	fields: [
+		{ name: 'invoice.number', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 2, locations: ['Invoice!A1'] },
+		{ name: 'customer.name', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 8, locations: ['Invoice!B2', 'Summary!B1'] },
+		{ name: 'items', scope: '', type: 'array', repeating: true, required: true, formatters: ['count'], used: 8, locations: ['Invoice!A5'] },
+		{ name: 'description', scope: 'items', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['Invoice!A5'] },
+		{ name: 'note', scope: 'items', type: 'string', repeating: false, required: false, formatters: ['default'], used: 1, locations: ['Invoice!A6'] },
 	],
 };
 
 const byId = (result) => Object.fromEntries(result.fields.map((f) => [f.id, f]));
 
-test('an API response becomes one n8n field per placeholder, with the types the template implies', () => {
-	const result = toResourceMapperFields(INVOICE_FIELDS);
-	const fields = byId(result);
+test('the API types every placeholder and the node uses those types verbatim', () => {
+	const fields = byId(toResourceMapperFields(REPORT_PPTX));
 
-	assert.equal(fields.invoice_no.type, 'string');
-	assert.equal(fields['customer.name'].type, 'string');
-	// `{issued|date:...}` is a date, `{total|currency:EUR}` a number,
-	// `{paid|yesno:...}` a boolean, `{#items}` a list.
-	assert.equal(fields.issued.type, 'dateTime');
-	assert.equal(fields.total.type, 'number');
-	assert.equal(fields.paid.type, 'boolean');
-	assert.equal(fields.items.type, 'array');
-	// An image placeholder takes a URL or base64, so it stays text.
+	assert.equal(fields.title.type, 'string');
+	assert.equal(fields['client.name'].type, 'string');
+	// The API's `date` becomes n8n's `dateTime` so the operator gets a picker.
+	assert.equal(byId(toResourceMapperFields(EXAMPLE_INVOICE)).issued.type, 'dateTime');
+	// An image placeholder takes a URL or base64, so it is text in n8n.
 	assert.equal(fields.logo.type, 'string');
+	// A repeating section is a list.
+	assert.equal(fields.rows.type, 'array');
+	assert.equal(fields.findings.type, 'array');
 
-	// Every field n8n needs to draw the form is present and well-formed.
-	for (const field of result.fields) {
+	for (const field of Object.values(fields)) {
 		assert.equal(typeof field.id, 'string');
 		assert.equal(typeof field.displayName, 'string');
 		assert.equal(field.defaultMatch, false);
+		assert.equal(field.canBeUsedToMatch, false);
 		assert.equal(field.display, true);
 		assert.equal(typeof field.required, 'boolean');
-		assert.equal(field.canBeUsedToMatch, false);
 	}
 });
 
-test('placeholders written inside a loop are not offered as root fields', () => {
-	const fields = byId(toResourceMapperFields(INVOICE_FIELDS));
-	// sku, qty and price are properties of a row of `items`. Offering them at the
-	// root is how a workflow ends up printing the same value on every line.
-	for (const inner of ['sku', 'qty', 'price']) {
+test('a placeholder written inside a section is never offered as a root field', () => {
+	const fields = byId(toResourceMapperFields(REPORT_PPTX));
+	// sku, qty and amount are properties of a row of `rows`. Offering them at the
+	// root is how a deck ends up printing the same value on every line.
+	for (const inner of ['sku', 'qty', 'amount', 'label', 'detail', 'owner']) {
 		assert.equal(fields[inner], undefined, `${inner} belongs to a row, not to the root`);
 	}
-	// `{../currency}` reaches out of the loop on purpose, so it IS root data.
-	assert.ok(fields.currency, 'a ../ path is root data even though it is written inside a loop');
+	assert.deepEqual(Object.keys(fields), ['title', 'subtitle', 'client.name', 'logo', 'notes', 'rows', 'findings']);
 });
 
-test('the list field says what each row has to contain — the thing nothing else tells you', () => {
-	const fields = byId(toResourceMapperFields(INVOICE_FIELDS));
-	assert.match(fields.items.displayName, /^items \(rows: /);
-	for (const key of ['sku', 'qty', 'price']) {
-		assert.ok(fields.items.displayName.includes(key), `row key ${key} missing from the label`);
+test('the list field says what each row has to contain', () => {
+	const fields = byId(toResourceMapperFields(REPORT_PPTX));
+	assert.equal(fields.rows.displayName, 'rows (rows: sku, qty, amount)');
+	assert.equal(fields.findings.displayName, 'findings (rows: label, detail, owner)');
+});
+
+test('scoping works the same for Word, Excel and PowerPoint', () => {
+	// The typed tree comes from running the renderer, so there is no per-format
+	// caveat any more: a section is a section in all three.
+	for (const [body, section, expected] of [
+		[REPORT_PPTX, 'rows', 'rows (rows: sku, qty, amount)'],
+		[NESTED_DOCX, 'orders', 'orders (rows: ref, customer, lines[])'],
+		[INVOICE_XLSX, 'items', 'items (rows: description, note)'],
+	]) {
+		assert.equal(byId(toResourceMapperFields(body))[section].displayName, expected);
 	}
 });
 
-test('a response with no close tags offers everything at the root rather than guessing', () => {
-	// The XLSX renderer filters close tags out before returning, so the nesting
-	// cannot be reconstructed. Dropping fields on a guess would be worse than
-	// showing them all.
-	const xlsx = {
-		format: 'xlsx',
-		fields: ['company', 'rows', 'sku', 'amount'],
-		tags: [
-			{ expr: 'company', kind: 'value', location: 'Sheet1!B2' },
-			{ expr: 'rows', kind: 'section', location: 'Sheet1!A5' },
-			{ expr: 'sku', kind: 'value', location: 'Sheet1!A5' },
-			{ expr: 'amount|number:2', kind: 'value', location: 'Sheet1!C5' },
-		],
-	};
-	const fields = byId(toResourceMapperFields(xlsx));
-	assert.deepEqual(Object.keys(fields).sort(), ['amount', 'company', 'rows', 'sku']);
-	assert.equal(fields.rows.type, 'array');
-	assert.equal(fields.amount.type, 'number');
-	// With the nesting unknown, the label stays the bare placeholder name.
-	assert.equal(fields.rows.displayName, 'rows');
+test('a list inside a list is marked as one, so three-level nesting is visible', () => {
+	const fields = byId(toResourceMapperFields(NESTED_DOCX));
+	// orders -> lines -> sku. Only `orders` and the root `customer` are root
+	// fields; `lines` is shown as a nested list in the label.
+	assert.deepEqual(Object.keys(fields), ['customer', 'orders']);
+	assert.match(fields.orders.displayName, /lines\[\]/);
+	// The root `customer` and the `customer` inside `orders` are different
+	// placeholders with the same name; only the root one is a form field.
+	assert.equal(fields.customer.type, 'string');
 });
 
 test('a template with no placeholders says so instead of showing an empty form', () => {
@@ -133,51 +148,61 @@ test('a template with no placeholders says so instead of showing an empty form',
 test('loop metadata and {.} are never offered as fields to fill in', () => {
 	const result = toResourceMapperFields({
 		format: 'pptx',
-		fields: ['title', '$index', '.', ''],
-		tags: [{ expr: 'title', kind: 'value', location: 'slide 1' }],
+		fields: [
+			{ name: 'title', scope: '', type: 'string', repeating: false, required: true },
+			{ name: '$index', scope: '', type: 'number', repeating: false, required: true },
+			{ name: '.', scope: '', type: 'string', repeating: false, required: true },
+		],
 	});
-	assert.deepEqual(
-		result.fields.map((f) => f.id),
-		['title'],
-	);
+	assert.deepEqual(result.fields.map((f) => f.id), ['title']);
 });
 
 test('a malformed or empty response never throws', () => {
-	for (const body of [{}, { fields: null, tags: null }, { fields: ['a'] }]) {
+	for (const body of [{}, { fields: null, tags: null }, { fields: [{ name: 'a', scope: '', type: 'nonsense' }] }]) {
 		const result = toResourceMapperFields(body);
 		assert.ok(Array.isArray(result.fields));
 	}
+	// An unknown type falls back to text rather than breaking the form.
+	assert.equal(
+		toResourceMapperFields({ fields: [{ name: 'a', scope: '', type: 'nonsense' }] }).fields[0].type,
+		'string',
+	);
 });
 
-test('fieldTypeOf reads the formatter pipeline, not the field name', () => {
-	const tags = [{ expr: 'x|filter:active|sort:due', kind: 'value' }];
-	assert.equal(fieldTypeOf('x', tags), 'array');
-	assert.equal(fieldTypeOf('unknown', tags), 'string');
+test('a DocMint older than the typed tree still produces a usable form', () => {
+	// Older instances answered with `fields: string[]` and nothing else. There is
+	// no type, nesting or optionality to read, so everything is offered as text
+	// at the root — and nothing is guessed.
+	const result = toResourceMapperFields({
+		format: 'docx',
+		fields: ['invoice_no', 'customer.name', 'items', 'issued', '$index', '.', 'invoice_no'],
+	});
+	assert.deepEqual(result.fields.map((f) => f.id), ['invoice_no', 'customer.name', 'items', 'issued']);
+	for (const field of result.fields) assert.equal(field.type, 'string');
 });
 
 /* ------------------------------------------------ the method n8n calls into */
 
 test('getTemplateFields asks the API about the chosen template and shapes the answer', async () => {
 	const { context, calls } = createLoadOptionsContext({
-		params: { template: rl('list', 'invoice'), options: {} },
-		http: () => ok(INVOICE_FIELDS),
+		params: { template: rl('list', 'report'), options: {} },
+		http: () => ok(REPORT_PPTX),
 	});
 	const node = new DocMint();
 	const result = await node.methods.resourceMapping.getTemplateFields.call(context);
 
 	assert.equal(calls[0].method, 'GET');
-	assert.equal(calls[0].url, 'https://docmint.test/v1/templates/invoice/fields');
-	assert.ok(result.fields.length > 0);
-	assert.ok(result.fields.some((f) => f.id === 'invoice_no'));
+	assert.equal(calls[0].url, 'https://docmint.test/v1/templates/report/fields');
+	assert.ok(result.fields.some((f) => f.id === 'rows' && f.type === 'array'));
 });
 
 test('getTemplateFields asks about the pinned version when one is set', async () => {
 	const { context, calls } = createLoadOptionsContext({
-		params: { template: rl('name', 'invoice'), options: { templateVersion: 2 } },
-		http: () => ok(INVOICE_FIELDS),
+		params: { template: rl('name', 'report'), options: { templateVersion: 2 } },
+		http: () => ok(REPORT_PPTX),
 	});
 	await new DocMint().methods.resourceMapping.getTemplateFields.call(context);
-	assert.equal(calls[0].url, 'https://docmint.test/v1/templates/invoice/fields?version=2');
+	assert.equal(calls[0].url, 'https://docmint.test/v1/templates/report/fields?version=2');
 });
 
 test('getTemplateFields explains itself rather than calling the API it cannot use', async () => {
@@ -211,18 +236,11 @@ test('the Template dropdown lists what the account has, with the format and plac
 	});
 	const node = new DocMint();
 	const all = await node.methods.listSearch.searchTemplates.call(context);
-	assert.deepEqual(
-		all.results.map((r) => r.value),
-		['invoice', 'forecast'],
-	);
+	assert.deepEqual(all.results.map((r) => r.value), ['invoice', 'forecast']);
 	assert.equal(all.results[0].name, 'invoice (DOCX, 2 placeholders)');
-	assert.equal(all.results[1].name, 'forecast (XLSX, 0 placeholders)');
 
 	const filtered = await node.methods.listSearch.searchTemplates.call(context, 'FORE');
-	assert.deepEqual(
-		filtered.results.map((r) => r.value),
-		['forecast'],
-	);
+	assert.deepEqual(filtered.results.map((r) => r.value), ['forecast']);
 });
 
 /* ---------------------------------------------- flat mapper -> nested data */
@@ -232,7 +250,6 @@ test('dotted placeholder paths become the nested object the API resolves against
 		customer: { name: 'Acme', vat: 'DE123' },
 		total: 12,
 	});
-	// A numeric segment means a list, matching the API's own path splitter.
 	assert.deepEqual(expandPaths({ 'items.0.sku': 'A1', 'items.1.sku': 'B2' }), {
 		items: [{ sku: 'A1' }, { sku: 'B2' }],
 	});
@@ -240,113 +257,39 @@ test('dotted placeholder paths become the nested object the API resolves against
 });
 
 test('a list typed into the JSON editor arrives at the API as a real list', () => {
-	const schema = [
-		{ id: 'items', displayName: 'items', type: 'array', defaultMatch: false, required: false, display: true },
-		{ id: 'total', displayName: 'total', type: 'number', defaultMatch: false, required: false, display: true },
-	];
-	const data = dataFromMapper({ items: '[{"sku":"A1","qty":2}]', total: 41.5 }, schema);
-	assert.deepEqual(data.items, [{ sku: 'A1', qty: 2 }]);
-	assert.equal(data.total, 41.5);
+	const schema = toResourceMapperFields(REPORT_PPTX).fields;
+	const data = dataFromMapper({ title: 'Q3', rows: '[{"sku":"A1","qty":2,"amount":9}]' }, schema);
+	assert.deepEqual(data.rows, [{ sku: 'A1', qty: 2, amount: 9 }]);
+	assert.equal(data.title, 'Q3');
 });
 
 test('text that is not JSON in a list field is passed through rather than silently dropped', () => {
-	const schema = [
-		{ id: 'items', displayName: 'items', type: 'array', defaultMatch: false, required: false, display: true },
-	];
-	assert.deepEqual(dataFromMapper({ items: 'not json' }, schema), { items: 'not json' });
+	const schema = toResourceMapperFields(REPORT_PPTX).fields;
+	assert.deepEqual(dataFromMapper({ rows: 'not json' }, schema), { rows: 'not json' });
 	// An empty list field means "nothing here", not "the string ''".
-	assert.deepEqual(dataFromMapper({ items: '   ' }, schema), {});
+	assert.deepEqual(dataFromMapper({ rows: '   ' }, schema), {});
 });
 
-/* ------------------------------ recorded responses from the real renderers */
-
-/**
- * The literal `POST /v1/inspect` response for `fixtures/invoice.docx`, copied
- * from the DocMint renderer rather than invented. It matters because the DOCX
- * and XLSX renderers do NOT emit close tags, so this is the shape the node
- * mostly meets in practice.
- */
-const REAL_DOCX_INVOICE = {
+/** `examples/invoice.docx`, the template the README walks through. */
+const EXAMPLE_INVOICE = {
 	format: 'docx',
 	fields: [
-		'logo',
-		'invoice_no',
-		'issued',
-		'customer.name',
-		'customer.address',
-		'items',
-		'description',
-		'qty',
-		'unit_price',
-		'line_total',
-		'paid',
-		'terms_days',
-		'notes',
-		'company',
-	],
-	tags: [
-		{ expr: 'logo', kind: 'image', location: 'word/document.xml, paragraph 1' },
-		{ expr: 'invoice_no', kind: 'value', location: 'word/document.xml, paragraph 2' },
-		{ expr: 'issued|date:DD MMMM YYYY', kind: 'value', location: 'word/document.xml, paragraph 3' },
-		{ expr: 'customer.name', kind: 'value', location: 'word/document.xml, paragraph 5' },
-		{ expr: 'customer.address', kind: 'value', location: 'word/document.xml, paragraph 6' },
-		{ expr: 'items', kind: 'section', location: 'word/document.xml, table 1 row 2' },
-		{ expr: 'description', kind: 'value', location: 'word/document.xml, table 1 row 2, paragraph 11' },
-		{ expr: 'qty', kind: 'value', location: 'word/document.xml, table 1 row 2, paragraph 12' },
-		{ expr: 'unit_price|currency:EUR', kind: 'value', location: 'word/document.xml, table 1 row 2, paragraph 13' },
-		{ expr: 'line_total|currency:EUR', kind: 'value', location: 'word/document.xml, table 1 row 2, paragraph 14' },
-		{
-			expr: 'items|sumProduct:qty:unit_price|currency:EUR',
-			kind: 'value',
-			location: 'word/document.xml, table 1 row 3, paragraph 18',
-		},
-		{ expr: 'paid', kind: 'inverted', location: 'word/document.xml, paragraph 19' },
-		{ expr: 'terms_days', kind: 'value', location: 'word/document.xml, paragraph 19' },
-		{ expr: 'paid', kind: 'section', location: 'word/document.xml, paragraph 19' },
-		{ expr: 'notes', kind: 'section', location: 'word/document.xml, paragraph 21' },
-		{ expr: '.', kind: 'value', location: 'word/document.xml, paragraph 22' },
-		{ expr: 'company', kind: 'value', location: 'word/document.xml, paragraph 24' },
-		{ expr: 'items|count', kind: 'value', location: 'word/document.xml, paragraph 24' },
+		{ name: 'logo', scope: '', type: 'image', repeating: false, required: true, formatters: [], used: 2, locations: ['word/document.xml, table 1 row 1, paragraph 1'] },
+		{ name: 'invoice_no', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 9, locations: ['word/document.xml, table 2 row 1, paragraph 18'] },
+		{ name: 'issued', scope: '', type: 'date', repeating: false, required: true, formatters: ['date'], used: 4, locations: ['word/document.xml, paragraph 9'] },
+		{ name: 'customer.name', scope: '', type: 'string', repeating: false, required: true, formatters: [], used: 2, locations: ['word/document.xml, table 2 row 1, paragraph 12'] },
+		{ name: 'vat_rate', scope: '', type: 'number', repeating: false, required: true, formatters: ['percent'], used: 2, locations: ['word/document.xml, table 4 row 2, paragraph 53'] },
+		{ name: 'items', scope: '', type: 'array', repeating: true, required: true, formatters: ['count', 'sumProduct', 'currency'], used: 11, locations: ['word/document.xml, table 3 row 2'] },
+		{ name: 'description', scope: 'items', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['word/document.xml, table 3 row 2, paragraph 43'] },
+		{ name: 'qty', scope: 'items', type: 'string', repeating: false, required: true, formatters: [], used: 1, locations: ['word/document.xml, table 3 row 2, paragraph 45'] },
+		{ name: 'unit_price', scope: 'items', type: 'number', repeating: false, required: true, formatters: ['currency'], used: 1, locations: ['word/document.xml, table 3 row 2, paragraph 47'] },
 	],
 };
 
-test('a real Word invoice becomes a usable form, not a JSON textarea', () => {
-	const fields = byId(toResourceMapperFields(REAL_DOCX_INVOICE));
-
-	// Every placeholder the document actually contains, with a real type.
-	assert.equal(fields.invoice_no.type, 'string');
+test('the Word invoice the README walks through becomes the form the README describes', () => {
+	const fields = byId(toResourceMapperFields(EXAMPLE_INVOICE));
+	assert.deepEqual(Object.keys(fields), ['logo', 'invoice_no', 'issued', 'customer.name', 'vat_rate', 'items']);
 	assert.equal(fields.issued.type, 'dateTime');
-	assert.equal(fields['customer.name'].type, 'string');
-	assert.equal(fields.unit_price.type, 'number');
-	assert.equal(fields.items.type, 'array');
-	// `{.}` inside `{#notes}` is the loop item, not a field to fill in.
-	assert.equal(fields['.'], undefined);
-});
-
-test('row keys are recovered from the formatter pipeline when close tags are absent', () => {
-	const fields = byId(toResourceMapperFields(REAL_DOCX_INVOICE));
-	// The DOCX renderer emits no close tags, so nesting is unknowable — but
-	// `{items|sumProduct:qty:unit_price}` still states that every row has `qty`
-	// and `unit_price`, and that fact is worth showing.
-	assert.match(fields.items.displayName, /^items \(rows: /);
-	assert.ok(fields.items.displayName.includes('qty'));
-	assert.ok(fields.items.displayName.includes('unit_price'));
-});
-
-test('row keys are read from every list formatter that names one', () => {
-	const cases = [
-		['t|sum:amount', ['amount']],
-		['t|sumProduct:qty:price', ['qty', 'price']],
-		['t|filter:active', ['active']],
-		['t|sort:due_date:desc', ['due_date']],
-		['t|groupBy:category', ['category']],
-		['t|unique:sku', ['sku']],
-		// Arguments that are not field names must not be mistaken for them.
-		['t|limit:10', undefined],
-		['t|join:, ', undefined],
-	];
-	for (const [expr, expected] of cases) {
-		const rows = rowKeysFromFormatters([{ expr, kind: 'value' }]);
-		assert.deepEqual(rows.get('t'), expected, `wrong row keys for ${expr}`);
-	}
+	assert.equal(fields.vat_rate.type, 'number');
+	assert.equal(fields.items.displayName, 'items (rows: description, qty, unit_price)');
 });

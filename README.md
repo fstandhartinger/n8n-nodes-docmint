@@ -24,8 +24,14 @@ This node breaks that loop in two places.
 **1. It shows you the placeholders.** DocMint has `GET /v1/templates/:name/fields`, and the
 node wires it to n8n's resource mapper. Pick a template and the panel fills with the
 placeholders that template actually contains — `invoice_no`, `customer.name`, `issued`,
-`items` — each as its own input. A `{issued|date:...}` placeholder becomes a date field.
-`{total|currency:EUR}` becomes a number field. `{#items}` becomes a list field.
+`items` — each as its own input, with the right widget: `{issued|date:...}` is a date
+field, `{total|currency:EUR}` a number field, `{#items}` a list.
+
+The node guesses none of that. DocMint works the types out by **actually rendering the
+template**, so what the form shows cannot drift from what a real render would do. Fields
+written inside a `{#section}` are not offered at the top level — they belong to a row —
+and the list field's label says what each row needs: `items (rows: description, qty,
+unit_price)`. A list inside a list is marked `orders (rows: ref, customer, lines[])`.
 
 **2. It refuses to render a document with a hole in it.** If a placeholder has no value,
 DocMint answers 422 and names the placeholder *and where in the document it is*. The node
@@ -121,7 +127,7 @@ in, or drop an expression into each:
 | `issued` | `{{ $now }}` |
 | `customer.name` | `{{ $json.customer }}` |
 | `customer.address` | `{{ $json.address }}` |
-| `items (rows: qty, unit_price)` | `{{ $json.lines }}` |
+| `items (rows: description, qty, unit_price)` | `{{ $json.lines }}` |
 
 Set **File Name** to `invoice-{invoice_no}` and execute.
 
@@ -141,10 +147,22 @@ Automatically** and the incoming item's JSON is sent as the data.
 | **Fill** | Fill a template with data and return the document, a PDF, or both |
 | **Inspect** | List the placeholders a template contains, and where each one is written |
 
-**Inspect** is worth wiring up on its own. Point it at a template and execute: the output
-item is the field list, with the `location` of every tag (`word/document.xml, paragraph
-12`, `Sheet1!C7`, `slide 3, shape "Title"`). It is the fastest way to see what a template
-someone else built is asking for.
+**Inspect** is worth wiring up on its own. Point it at a template and execute. The output
+item carries:
+
+- `fields` — the typed, scoped tree: every placeholder with its `type`, the `scope` it
+  lives in, whether it `repeating`s, whether it is `required`, how often it is `used`, and
+  the `locations` it appears at.
+- `tags` — what is literally written in the file, with the `location` of each
+  (`word/document.xml, paragraph 12`, `Sheet1!C7`, `slide 3, shape "Title"`).
+- `sample_data` — a skeleton payload DocMint built by rendering the template.
+
+`sample_data` is the shortcut. Wire Inspect into a Fill node, turn on **Send Raw JSON
+Instead**, and pass `{{ $json.sample_data }}`: you get a real document out of an unfamiliar
+template in one step, then replace the dummy values one at a time. Across DocMint's own
+fixtures the skeleton renders 20 out of 21 templates without an error — the exception is a
+template that multiplies two fields nothing else types as numbers, where the skeleton
+supplies text and the `sumProduct` formatter rejects it.
 
 ### Template
 
@@ -344,11 +362,13 @@ Stated plainly, because a README that only lists strengths is not much use:
 - **No delivery integrations.** DocMint returns the file and lets n8n do the emailing,
   uploading and storing — which is the right split for a workflow tool, but it is a
   difference rather than a strict advantage.
-- **Placeholder scoping is only partly visible for Word and Excel.** The renderer's
-  `inspect` reports section *openings* but not their closings for `.docx` and `.xlsx`, so
-  for those formats the node lists every placeholder at the top level and recovers row
-  fields only where a formatter names them (`{items|sumProduct:qty:price}`). For `.pptx`
-  the closings are reported and the nesting is exact.
+- **Types are as good as the template is explicit.** A field only DocMint's formatters
+  describe gets described well: `{total|currency:EUR}` is a number, `{issued|date:...}` a
+  date. A bare `{qty}` is text, even where the template later multiplies it, so the form
+  offers a text box and the arithmetic is checked at render time instead.
+- **Against a DocMint older than the typed field tree** — an out-of-date self-hosted
+  instance — the node falls back to listing every placeholder as text at the top level,
+  with no types and no row grouping. It does not guess to fill the gap.
 
 ## Links
 

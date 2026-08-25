@@ -346,7 +346,14 @@ export async function docMintRequest(
 		returnFullResponse: true,
 		ignoreHttpStatusErrors: false,
 	};
-	if (body !== undefined) options.body = body;
+	if (body !== undefined) {
+		options.body = body;
+		// A request that asks for a binary RESPONSE still sends a JSON body, and
+		// `json: false` only describes the response. Naming the request content
+		// type here means the node does not depend on the HTTP client inferring
+		// it from the body's type.
+		options.headers = { ...options.headers, 'Content-Type': 'application/json' };
+	}
 	if (binary) options.encoding = 'arraybuffer';
 
 	try {
