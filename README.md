@@ -403,3 +403,31 @@ verification at all.
 ## Licence
 
 [MIT](LICENSE.md)
+
+## Verification video, submitted 2026-08-25
+
+`manual:under-review` — the demo video is uploaded and n8n's team has it.
+
+Recorded against n8n's own checklist, read off the portal rather than guessed:
+install from npm (0.1.0, the submitted version), new workflow, credential **with
+the connection test shown passing**, the common action, and the node used as an
+AI-agent tool. 3.9 minutes, no cuts — Playwright records the browser context, so
+the file is continuous by construction.
+
+`recorder/` holds the script. Nine takes; each failure is worth knowing:
+
+| Take | What broke |
+| --- | --- |
+| 1 | the risks checkbox never ticked, so Install stayed disabled — the step now asserts the button became enabled instead of assuming the click landed |
+| 2 | `text=` mixed into a CSS selector list; Playwright syntax cannot be |
+| 3 | the action is "Fill document template", not "Fill" |
+| 4 | the credential button reads "Connect to DocMint" in this n8n build |
+| 5–6 | the template dropdown items are not `el-select-dropdown__item`; matched on text instead |
+| 7 | the chat-model handle was picked by DOM order, which includes the agent's main output handle — the agent then errored "A Chat Model sub-node must be connected" |
+| 8 | the agent asked a clarifying question instead of calling the tool: the prompt left the output format open |
+| 9 | the expression editor auto-closes braces, so a typed `}}` produced `}} }}` |
+
+**One thing the video does not claim.** `$fromAI` reached the tool but never
+carried the field values, and DocMint correctly refused a fill with no data. The
+tool's data is therefore pinned, and the agent decides *when* to call it — which
+is what n8n asks to see. The caption says exactly that and no more.
