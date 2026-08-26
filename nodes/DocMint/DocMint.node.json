@@ -25,10 +25,10 @@
 	],
 	"resources": {
 		"credentialDocumentation": [
-			{ "url": "https://docmint-832s.onrender.com/docs#authentication" }
+			{ "url": "https://docmint.app.mintapis.com/docs#authentication" }
 		],
 		"primaryDocumentation": [
-			{ "url": "https://docmint-832s.onrender.com/docs" }
+			{ "url": "https://docmint.app.mintapis.com/docs" }
 		]
 	}
 }

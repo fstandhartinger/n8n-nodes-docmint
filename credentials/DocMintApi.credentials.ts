@@ -12,7 +12,7 @@ export class DocMintApi implements ICredentialType {
 
 	displayName = 'DocMint API';
 
-	documentationUrl = 'https://docmint-832s.onrender.com/docs#authentication';
+	documentationUrl = 'https://docmint.app.mintapis.com/docs#authentication';
 
 	properties: INodeProperties[] = [
 		{
@@ -24,13 +24,13 @@ export class DocMintApi implements ICredentialType {
 			required: true,
 			placeholder: 'e.g. dm_live_...',
 			description:
-				'Create an account at https://docmint-832s.onrender.com/signup and copy the key shown on your dashboard. Keys start with dm_live_ and are only shown once.',
+				'Create an account at https://docmint.app.mintapis.com/signup and copy the key shown on your dashboard. Keys start with dm_live_ and are only shown once.',
 		},
 		{
 			displayName: 'Base URL',
 			name: 'baseUrl',
 			type: 'string',
-			default: 'https://docmint-832s.onrender.com',
+			default: 'https://docmint.app.mintapis.com',
 			description: 'Only change this if you run your own DocMint instance',
 		},
 	];

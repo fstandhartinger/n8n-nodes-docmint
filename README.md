@@ -7,7 +7,7 @@ And the part nothing else does: **the node reads your template and turns its
 placeholders into real n8n fields.** Typed, expression-capable, one per placeholder,
 with the names taken from the document itself. No JSON textarea. No guessing the keys.
 
-[DocMint](https://docmint-832s.onrender.com) is the API behind it.
+[DocMint](https://docmint.app.mintapis.com) is the API behind it.
 
 ---
 
@@ -75,7 +75,7 @@ provenance attestation, so `npm audit signatures` can verify which commit built 
 
 ## Credential
 
-1. Create an account at <https://docmint-832s.onrender.com/signup>. Your API key is shown
+1. Create an account at <https://docmint.app.mintapis.com/signup>. Your API key is shown
    once, immediately.
 2. In n8n, add a **DocMint API** credential and paste the key. It starts with `dm_live_`.
 3. Press **Test**. The credential checks itself against `GET /v1/usage`, which is
@@ -260,7 +260,7 @@ sections too — `{#items|filter:active|sort:due_date}` — so the workflow does
 pre-sort a list before it gets here.
 
 The live list for your deployment is at
-<https://docmint-832s.onrender.com/v1/capabilities>, which is generated from the running
+<https://docmint.app.mintapis.com/v1/capabilities>, which is generated from the running
 code rather than written by hand.
 
 ## Options
@@ -306,7 +306,7 @@ The failed item carries the API's own fields, so an IF node can branch on
     "field": "customer_vat",
     "location": "word/document.xml, paragraph 12",
     "available": ["invoice_no", "customer_vat_id", "total"],
-    "docs": "https://docmint-832s.onrender.com/docs#errors",
+    "docs": "https://docmint.app.mintapis.com/docs#errors",
     "request_id": "51e5390e4107f566",
     "httpCode": "422"
   },
@@ -385,9 +385,9 @@ Stated plainly, because a README that only lists strengths is not much use:
 
 ## Links
 
-- Docs: <https://docmint-832s.onrender.com/docs>
-- Dashboard: <https://docmint-832s.onrender.com/dashboard>
-- Capabilities of the running build: <https://docmint-832s.onrender.com/v1/capabilities>
+- Docs: <https://docmint.app.mintapis.com/docs>
+- Dashboard: <https://docmint.app.mintapis.com/dashboard>
+- Capabilities of the running build: <https://docmint.app.mintapis.com/v1/capabilities>
 - Issues: <https://github.com/fstandhartinger/n8n-nodes-docmint/issues>
 
 Generating PDFs from HTML, Markdown or a URL instead? That is

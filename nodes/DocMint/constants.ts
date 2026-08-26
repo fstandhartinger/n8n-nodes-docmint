@@ -2,7 +2,7 @@
  * The DocMint instance the credential points at by default. Overridable in the
  * credential so a self-hosted deployment works without editing the node.
  */
-export const DEFAULT_BASE_URL = 'https://docmint-832s.onrender.com';
+export const DEFAULT_BASE_URL = 'https://docmint.app.mintapis.com';
 
 /** The credential this node authenticates with. */
 export const CREDENTIAL_NAME = 'docMintApi';
