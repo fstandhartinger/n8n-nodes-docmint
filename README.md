@@ -50,17 +50,19 @@ through. The mapper is the default; the JSON blob is the escape hatch.
 
 ## Install
 
-> **Unverified community nodes need self-hosted n8n.** n8n's rule is that *"unverified
-> community nodes aren't available on n8n cloud and require self-hosting n8n."* Until this
-> package is verified, install it on a self-hosted instance. On n8n Cloud you can call the
-> API directly from an HTTP Request node pointed at `POST /v1/render`, which returns the
-> same bytes this node hands you.
+> **Installs on n8n Cloud and self-hosted.** The node passed n8n's verification and is
+> published as a verified community node, so you no longer need to self-host to use it.
+>
+> **From the nodes panel (Cloud or self-hosted):** open a workflow → add node → search
+> `DocMint` → pick it under **More from the community** → **Install**. n8n limits that
+> button to the instance owner and admin accounts; everyone else on the instance can use
+> the node once it is installed.
 
-**From the n8n UI**
+**Self-hosted, from the n8n UI**
 
 Settings → Community Nodes → Install → `n8n-nodes-docmint`
 
-**From the CLI**
+**Self-hosted, from the CLI**
 
 ```bash
 cd ~/.n8n/nodes
