@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-docmint",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Fill Word, Excel and PowerPoint templates with workflow data and get the file — or a PDF — back on the same node. The template's own placeholders become real n8n fields.",
   "keywords": [
     "n8n-community-node-package",

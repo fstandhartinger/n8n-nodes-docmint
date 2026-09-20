@@ -192,6 +192,59 @@ and `sumProduct` rightly refused it. Formatter arguments are now read as type fa
 The node is marked `usableAsTool`, so an **n8n AI Agent can call it directly** — give the
 agent the node and it can produce a document as part of its own reasoning.
 
+## Many documents in one call
+
+**The node has no batch operation.** Wired normally, Fill runs once per incoming item, so
+a month-end run of 500 invoices is 500 executions and 500 HTTP round trips against a
+service that restarts on deploy.
+
+The API grew two endpoints for this after the node was written, and an **HTTP Request**
+node reaches both today. They are not node operations, so nothing below is filled in for
+you — but they are the answer if the loop is too slow.
+
+**Synchronous — `POST /v1/render/batch`.** One template, up to 100 datasets, one response.
+
+```json
+{
+  "template": "invoice",
+  "output": "document",
+  "items": [
+    { "filename": "invoice-1", "data": { "invoice_no": "INV-2026-0001", "…": "…" } },
+    { "filename": "invoice-2", "data": { "invoice_no": "INV-2026-0002", "…": "…" } }
+  ]
+}
+```
+
+Set `"response": "zip"` for one archive instead of JSON, and `"on_error": "continue"` to
+let the good rows through instead of failing the call. Both together return a ZIP holding
+the documents that rendered plus an `errors.json` naming the ones that did not, and the
+response carries `x-docmint-batch-ok` and `x-docmint-batch-failed` headers so a workflow
+can branch without opening the archive. Only the rows that produced a document are
+charged. A synchronous batch is capped at 20 items when `output` is `pdf`, because that
+stage is the slow one.
+
+**Queued — `POST /v1/jobs`.** The same body, plus an optional `webhook_url`. It answers
+`202` immediately:
+
+```json
+{
+  "id": "job_…", "status": "queued", "kind": "batch", "count": 4, "output": "pdf",
+  "status_url": "https://docmint.app.mintapis.com/v1/jobs/job_…",
+  "credits": { "reserved": 8, "remaining": 22, "limit": 30 }
+}
+```
+
+Poll `status_url` (or wait for the webhook) until `status` is `succeeded`. The finished
+job carries a per-item report and a single ZIP whose download URL lives for 24 hours.
+Credits are reserved when the job is queued and whatever it does not produce is given
+back. The webhook is signed `HMAC-SHA256` over `{timestamp}.{body}` in the
+`X-DocMint-Signature` header, is retried three times, and must be publicly reachable —
+a `localhost` URL is refused by name, with `private_address_blocked`, so an n8n **Webhook**
+node's production URL is the one to use rather than its test URL.
+
+`GET /v1/capabilities` needs no key and reports the live limits of the deployment you are
+calling, including `max_batch_items` and `max_sync_batch_pdf_items`.
+
 ## Choosing the template
 
 The **Template** field has three modes:
@@ -223,9 +276,10 @@ so the next node does not have to guess where they went. Both field names are co
 under **Options**.
 
 A PDF costs one credit more than the Office file, because converting it costs DocMint
-about a hundred times the CPU of the fill itself (measured: roughly 1.0 s of LibreOffice
-against about 10 ms). Nothing else is metered — downloading a file you already generated
-is free.
+about a hundred times the CPU of the fill itself: measured against production on
+2026-09-20, four invoices filled in 93 ms together and then took 12.9 s to convert — about
+2.6 s of LibreOffice each, against about 23 ms each to fill. Nothing else is metered —
+downloading a file you already generated is free.
 
 ## Template syntax
 
@@ -251,10 +305,21 @@ written for docxtemplater and one written for a Handlebars-based tool both work 
 Anything between braces that does not parse as a tag is left alone, so a document
 containing `{ "total": 12 }` or `.a { color: red }` renders unchanged.
 
-**Formatters:**
-`add` `count` `currency` `date` `default` `divide` `filter` `groupBy` `join` `limit`
-`lower` `multiply` `number` `ordinal` `percent` `reject` `reverse` `round` `skip` `sort`
-`subtract` `sum` `sumProduct` `title` `trim` `unique` `upper` `yesno`
+**Formatters — all 43, as `/v1/capabilities` reports them:**
+
+*Values and lists:* `add` `count` `default` `divide` `filter` `groupBy` `join` `limit`
+`multiply` `reject` `reverse` `round` `skip` `sort` `subtract` `sum` `sumProduct` `unique`
+
+*Text and numbers:* `currency` `lower` `number` `ordinal` `percent` `title` `trim` `upper`
+`yesno`
+
+*Comparisons:* `contains` `empty` `eq` `gt` `gte` `lt` `lte` `ne` `notEmpty`
+
+*Dates:* `after` `before` `date` `daysSince` `daysUntil` `future` `past`
+
+The comparison and date groups were missing from this list until 2026-09-20, though the
+count was right. They are most useful inside a section, where they read as a condition:
+`{#total|gt:1000}Free delivery{/total}`, `{#due|past}OVERDUE{/due}`.
 
 `{items|sum:amount}` and `{items|sumProduct:qty:price}` are the ones that matter: a total
 in a document should be computed from the data, never typed in. Formatters work on
@@ -333,6 +398,8 @@ field costs you nothing.
 | Versions kept per template | 20, oldest pruned first, never below one |
 | PDF conversion timeout | 90 s |
 | Requests per minute, per account | 120, with a burst of 30 |
+| Items in one batch | 100, or 20 when the output is PDF |
+| Queued job result kept | 24 hours for the ZIP, 7 days for the job record |
 
 Template names are 1–64 characters of lower-case letters, digits, dot, dash and
 underscore. Macro-enabled files (`.docm`, `.xlsm`, `.pptm`) are filled, but the macros are
@@ -369,11 +436,21 @@ Stated plainly, because a README that only lists strengths is not much use:
   has more.
 - **One error per render.** If two placeholders are wrong, DocMint names the first,
   you fix it, and the next render names the second. docxtemplater reports them all at once.
-- **No batch or asynchronous rendering yet, and PDF conversion runs one at a time.**
-  LibreOffice was measured at 219 MB peak and about 2.6 seconds per conversion on the
-  production instance, so PDF requests queue. If you need hundreds of PDFs at once, that is
-  a real limitation today; ask for the Office file instead, which is not throttled and
-  takes about 25 ms end to end.
+- **The node renders one document per item — batching and queueing are API-only.**
+  The node has four operations (Fill, Inspect, the Template set, Get Usage) and no batch
+  or job operation, so 500 invoices are 500 executions of the Fill node. The API itself
+  has since grown both: `POST /v1/render/batch` takes up to 100 datasets against one
+  template in a single call, and `POST /v1/jobs` queues the same request and answers 202
+  with a `status_url`, then delivers a ZIP and optionally an HMAC-signed webhook. Until
+  the node exposes them, an **HTTP Request** node reaches them in one step. See
+  [Many documents in one call](#many-documents-in-one-call).
+- **PDF conversion still runs one at a time.** Measured against the production instance
+  on 2026-09-20: a queued batch of four PDFs took 13.4 s wall clock, of which the PDF
+  stage was 12.9 s — about 2.6 s per conversion, serialised — while filling all four
+  `.docx` files took 93 ms together. Queueing removes the round trips and the risk of
+  losing your place in a loop; it does not make LibreOffice faster. If you need hundreds
+  of PDFs at once that is still a real limit; ask for the Office file instead, which is
+  not throttled and took about 23 ms per document in the same run.
 - **No delivery integrations.** DocMint returns the file and lets n8n do the emailing,
   uploading and storing — which is the right split for a workflow tool, but it is a
   difference rather than a strict advantage.
@@ -406,9 +483,12 @@ verification at all.
 
 [MIT](LICENSE.md)
 
-## Verification video, submitted 2026-08-25
+## Verification video, submitted 2026-08-25 — review passed
 
-`manual:under-review` — the demo video is uploaded and n8n's team has it.
+**Verified.** n8n's registry lists `n8n-nodes-docmint` as published since
+2026-09-07 (`isPublished: true`, checked again on 2026-09-20), which is why the
+Install section above says the node installs on Cloud. The heading below is kept
+because the takes are worth reading, not because the outcome is still open.
 
 Recorded against n8n's own checklist, read off the portal rather than guessed:
 install from npm (0.1.0, the submitted version), new workflow, credential **with
