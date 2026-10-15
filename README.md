@@ -9,6 +9,15 @@ with the names taken from the document itself. No JSON textarea. No guessing the
 
 [DocMint](https://docmint.app.mintapis.com) is the API behind it.
 
+One published n8n template is built on this node, and it opens from inside n8n:
+[Regional sales reports from CRM
+exports](https://n8n.io/workflows/18787-generate-regional-sales-reports-from-crm-exports-with-docmint-and-excel).
+A webhook takes a flat CRM export, **Get Fields** checks that the `.xlsx` template is on
+your account, a Code node does the arithmetic, and **Fill** sends the filled workbook back
+on the same request. You supply the `.xlsx` yourself: upload it once (see
+[Zero to a filled invoice](#zero-to-a-filled-invoice)) and put its name into the
+template's one Set node.
+
 ---
 
 ## Why this node exists

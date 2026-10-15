@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- README only: links the published n8n template built on this node (Regional sales reports from CRM exports) and says what it needs from you. No code change.
+
 ## 0.2.0
 
 - Moved the default Base URL from the Render host to the project's own permanent host at <https://docmint.app.mintapis.com>.
